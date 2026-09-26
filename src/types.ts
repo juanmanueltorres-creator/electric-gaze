@@ -107,6 +107,23 @@ export interface MaskShape {
   points: number[];
 }
 
+/**
+ * A radial mask region: the primary way to protect (or reveal) an area
+ * without painting it. Normalized so a config scales to any canvas.
+ */
+export interface RadialMaskPoint {
+  /** Normalized 0..1 x position on the canvas */
+  x: number;
+  /** Normalized 0..1 y position on the canvas */
+  y: number;
+  /** Normalized radius: fraction of the canvas' shorter edge, 0..1 */
+  radius: number;
+  /** 0..100 — how much mask this point applies at its core */
+  strength: number;
+  /** 0..100 — 0 is a hard edge, 100 fades across the whole radius */
+  feather: number;
+}
+
 export interface MaskState {
   enabled: boolean;
   tool: MaskTool;
@@ -116,6 +133,11 @@ export interface MaskState {
   mode: MaskMode;
   dataUrl: string | null;
   shapes: MaskShape[];
+  /**
+   * Primary mask flow; the paint bitmap is the advanced/manual layer.
+   * Both layers combine with a max alpha (never a sum).
+   */
+  radialPoints: RadialMaskPoint[];
 }
 
 export interface AnimBand {

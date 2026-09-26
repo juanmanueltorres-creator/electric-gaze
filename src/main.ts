@@ -5,6 +5,7 @@ import {
   beginStroke,
   clearMask,
   drawMaskOverlay,
+  drawRadialGuide,
   endStroke,
   extendStroke,
   getMaskCanvas,
@@ -95,6 +96,9 @@ function draw(now: number): void {
   // finished, so it never enters the effect and never reaches an export that
   // re-renders instead of reading this canvas back.
   if (paintMode || params.mask.showOverlay) drawMaskOverlay(canvas, 0.5);
+  // Radial editing guide: preview furniture, drawn after renderFrame so it
+  // never enters the effect and never reaches an export, which re-renders.
+  if (params.mask.radialPoints.length > 0) drawRadialGuide(canvas, params.mask.radialPoints);
 }
 
 function frame(now: number): void {
@@ -434,13 +438,17 @@ async function copyAiPrompt(): Promise<void> {
  * editor. The URL only ever reaches the clipboard or a chip as text.
  */
 async function copyShareLink(): Promise<void> {
-  const link = buildShareLink(params, window.location.href);
-  if (link === null) {
-    console.warn('Electric Gaze: share payload too large to link');
-    showStageNote('Could not copy share link', 'share-note');
-    return;
-  }
+  // The whole path — link construction included — sits inside the try, so a
+  // rejected build can never surface as an uncaught promise rejection from
+  // the `void copyShareLink()` call in the click handler. Every failure lands
+  // on the same user-facing chip.
   try {
+    const link = buildShareLink(params, window.location.href);
+    if (link === null) {
+      console.warn('Electric Gaze: share payload too large to link');
+      showStageNote('Could not copy share link', 'share-note');
+      return;
+    }
     if (typeof navigator.clipboard?.writeText !== 'function') {
       throw new Error('clipboard API unavailable');
     }

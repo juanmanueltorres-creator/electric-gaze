@@ -30,6 +30,26 @@ export const SHARE_PREFIX = 's1.';
  */
 export const MAX_SHARE_PAYLOAD = 8192;
 
+/**
+ * The byte budget `MAX_SHARE_PAYLOAD` implies: base64 turns 3 bytes into 4
+ * characters and `=` padding is stripped, so any payload above this is
+ * guaranteed to land over the cap. Rejected *before* encoding starts.
+ *
+ * The size gate has to run first. Spreading the byte array into
+ * `String.fromCharCode(...)` is bounded by the engine's argument limit
+ * (roughly 65k-125k), so encoding a large config used to throw
+ * `RangeError: Maximum call stack size exceeded` instead of returning null —
+ * an oversized link became an uncaught rejection rather than a refused link.
+ */
+const MAX_SHARE_BYTES = Math.floor(MAX_SHARE_PAYLOAD / 4) * 3;
+
+/**
+ * Bytes handed to `String.fromCharCode` per call. Comfortably under every
+ * engine's argument limit, so the conversion cannot blow the stack even if
+ * the cap above is ever raised.
+ */
+const ENCODE_CHUNK = 4096;
+
 /** Encode parameters as the fragment body (no leading `#`). */
 export function encodeShareParams(params: Params): string | null {
   // The mask bitmap can be megabytes and is tied to one user's image: it is
@@ -37,7 +57,12 @@ export function encodeShareParams(params: Params): string | null {
   const { mask, ...rest } = params;
   const payload = { ...rest, mask: { ...mask, dataUrl: null } };
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
-  const encoded = btoa(String.fromCharCode(...bytes))
+  if (bytes.length > MAX_SHARE_BYTES) return null;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += ENCODE_CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + ENCODE_CHUNK));
+  }
+  const encoded = btoa(binary)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');

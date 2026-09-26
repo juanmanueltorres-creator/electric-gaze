@@ -21,6 +21,7 @@ import {
   type LightPoint,
   type MaskMode,
   type Params,
+  type RadialMaskPoint,
 } from '../types';
 import { downloadBlob } from './export';
 import {
@@ -317,6 +318,13 @@ export function normalizeParams(raw: unknown): Params {
   const legacyMode: MaskMode = merged.mask.invert ? 'include' : 'exclude';
   const maskMode: MaskMode =
     rawMode === 'include' || rawMode === 'exclude' ? rawMode : legacyMode;
+  // Radial points are the primary mask flow, clamped here like every other
+  // parameter: a malformed payload degrades to defaults instead of feeding
+  // NaN into the renderer's per-pixel loop. No point-count cap — the renderer
+  // only ever visits each point's bounding box.
+  const rawRadial: unknown[] = Array.isArray(merged.mask.radialPoints)
+    ? merged.mask.radialPoints
+    : [];
   merged.mask = {
     enabled: !!merged.mask.enabled,
     tool: pick(merged.mask.tool, ['freehand', 'rect', 'circle'] as const, 'freehand'),
@@ -326,6 +334,16 @@ export function normalizeParams(raw: unknown): Params {
     mode: maskMode,
     dataUrl: typeof merged.mask.dataUrl === 'string' ? merged.mask.dataUrl : null,
     shapes: Array.isArray(merged.mask.shapes) ? merged.mask.shapes : [],
+    radialPoints: rawRadial.map((rawPoint) => {
+      const p: Record<string, unknown> = isPlainObject(rawPoint) ? rawPoint : {};
+      return {
+        x: clampNum(num(p.x, 0.5), 0, 1),
+        y: clampNum(num(p.y, 0.3), 0, 1),
+        radius: clampNum(num(p.radius, 0.25), 0, 1),
+        strength: clampNum(num(p.strength, 100), 0, 100),
+        feather: clampNum(num(p.feather, 35), 0, 100),
+      };
+    }),
   };
 
   return merged;
@@ -445,6 +463,10 @@ export function buildControls(root: HTMLElement, host: ControlsHost): () => void
       box.append(buildLightPoints(host, updaters, notify));
     }
     if (sectionDef.title === 'Mask') {
+      // Radial points first: they are the primary flow, so they sit above the
+      // paint controls. `Clear mask` keeps clearing the PAINT bitmap only —
+      // it never touches `radialPoints`.
+      box.append(buildRadialMaskPoints(host, updaters, notify));
       box.append(el('div', 'row', button('Clear mask', () => host.onClearMask())));
     }
     frag.append(box);
@@ -1040,6 +1062,129 @@ function buildLightPoints(
         // second checkbox is found is not a working path from the panel.
         host.params.lights.points.push({ x: 0.5, y: 0.38, radius: 0.4, intensity: 80 });
         host.params.lights.enabled = true;
+        notify();
+      }),
+    ),
+  );
+  return frag;
+}
+
+/**
+ * Per-point controls for `mask.radialPoints`, built once per points array.
+ *
+ * Same mechanics as `buildLightPoints`: the rebuild is keyed on the array's
+ * identity, not just its length, because "Apply JSON" replaces the array
+ * wholesale and rows holding the old objects would silently write to a
+ * detached copy. Slider edits never rebuild (same array), so dragging stays
+ * smooth — the slider only writes the value and asks for one render.
+ *
+ * x/y/radius are normalized 0..1 in Params (radius as a fraction of the
+ * canvas' shorter edge); the panel speaks percent for those. Strength and
+ * feather are 0..100 in Params and are shown as-is.
+ */
+function buildRadialMaskPoints(
+  host: ControlsHost,
+  updaters: Array<() => void>,
+  notify: () => void,
+): DocumentFragment {
+  const frag = document.createDocumentFragment();
+  const list = el('div', 'lights');
+  frag.append(list);
+
+  let rendered: RadialMaskPoint[] | null = null;
+  let count = -1;
+  const syncs: Array<() => void> = [];
+
+  const rebuild = (): void => {
+    const points = host.params.mask.radialPoints;
+    list.replaceChildren();
+    syncs.length = 0;
+    if (points.length === 0) {
+      list.append(el('div', 'row', 'No mask points yet'));
+    }
+    points.forEach((point, index) => {
+      const block = el('div', 'light');
+
+      const head = el('div', 'row');
+      head.append(text(`Mask ${index + 1}`));
+      const remove = button('Remove', () => {
+        host.params.mask.radialPoints.splice(index, 1);
+        notify();
+      });
+      remove.style.marginLeft = 'auto';
+      head.append(remove);
+      block.append(head);
+
+      const slider = (label: string, read: () => number, write: (v: number) => void): void => {
+        const srow = el('label', 'row');
+        srow.append(text(label));
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.min = '0';
+        input.max = '100';
+        input.step = '1';
+        const out = el('span', 'value');
+        const sync = (): void => {
+          const v = read();
+          input.value = String(v);
+          out.textContent = String(v);
+        };
+        input.addEventListener('input', () => {
+          write(Number(input.value));
+          out.textContent = input.value;
+          host.onChange();
+        });
+        syncs.push(sync);
+        srow.append(input, out);
+        block.append(srow);
+        sync();
+      };
+
+      // x/y/radius are normalized 0..1 in Params; the panel speaks percent.
+      slider('X %', () => Math.round(point.x * 100), (v) => {
+        point.x = v / 100;
+      });
+      slider('Y %', () => Math.round(point.y * 100), (v) => {
+        point.y = v / 100;
+      });
+      slider('Radius %', () => Math.round(point.radius * 100), (v) => {
+        point.radius = v / 100;
+      });
+      slider('Strength %', () => point.strength, (v) => {
+        point.strength = v;
+      });
+      slider('Feather %', () => point.feather, (v) => {
+        point.feather = v;
+      });
+
+      list.append(block);
+    });
+    rendered = points;
+    count = points.length;
+  };
+
+  updaters.push(() => {
+    const points = host.params.mask.radialPoints;
+    if (rendered !== points || count !== points.length) rebuild();
+    else for (const sync of syncs) sync();
+  });
+  rebuild();
+
+  frag.append(
+    el(
+      'div',
+      'row',
+      button('Add mask point', () => {
+        // Added switched on as well: a point that renders nothing until a
+        // second checkbox is found is not a working path from the panel.
+        host.params.mask.radialPoints.push({
+          x: 0.5,
+          y: 0.3,
+          radius: 0.25,
+          strength: 100,
+          feather: 35,
+        });
+        host.params.mask.enabled = true;
         notify();
       }),
     ),

@@ -25,6 +25,27 @@ function paramsWithHugeLights(): Params {
   });
 }
 
+/**
+ * A params object whose serialised form is well past the argument limit of
+ * `String.fromCharCode(...)` (roughly 65k-125k depending on the engine).
+ * Encoding this used to throw `RangeError: Maximum call stack size exceeded`
+ * *before* the payload cap was ever consulted, so an oversized config became
+ * an uncaught rejection instead of a refused link.
+ */
+function paramsBeyondSpreadLimit(): Params {
+  return normalizeParams({
+    lights: {
+      enabled: true,
+      points: Array.from({ length: 5000 }, () => ({
+        x: 0.5,
+        y: 0.4,
+        radius: 0.4,
+        intensity: 80,
+      })),
+    },
+  });
+}
+
 const frag = (params: Params): string => {
   const encoded = encodeShareParams(params);
   expect(encoded).not.toBeNull();
@@ -70,6 +91,39 @@ describe('share link encoding', () => {
 
   it('refuses to encode a payload past the cap', () => {
     expect(encodeShareParams(paramsWithHugeLights())).toBeNull();
+  });
+
+  it('encodes a normal payload and keeps it within the cap', () => {
+    const encoded = encodeShareParams(normalizeParams(DEFAULT_PARAMS));
+    expect(encoded).not.toBeNull();
+    expect(encoded!.startsWith(SHARE_PREFIX)).toBe(true);
+    expect(encoded!.length).toBeLessThanOrEqual(MAX_SHARE_PAYLOAD);
+  });
+
+  it('refuses an oversized payload without throwing', () => {
+    expect(() => encodeShareParams(paramsWithHugeLights())).not.toThrow();
+    expect(encodeShareParams(paramsWithHugeLights())).toBeNull();
+  });
+
+  it('refuses a payload past the old spread limit instead of overflowing the stack', () => {
+    const params = paramsBeyondSpreadLimit();
+    // Guard the premise: this fixture really is larger than the argument
+    // limit the old encoder spread its bytes into.
+    expect(JSON.stringify(params).length).toBeGreaterThan(130_000);
+    expect(() => encodeShareParams(params)).not.toThrow();
+    expect(encodeShareParams(params)).toBeNull();
+  });
+
+  it('never throws for any payload size, it only returns a fragment or null', () => {
+    const sizes = [
+      normalizeParams(DEFAULT_PARAMS),
+      paramsWithHugeLights(),
+      paramsBeyondSpreadLimit(),
+    ];
+    for (const params of sizes) {
+      expect(() => encodeShareParams(params)).not.toThrow();
+      expect(() => buildShareLink(params, 'https://example.test/#old')).not.toThrow();
+    }
   });
 
   it('builds a full URL and discards any previous fragment', () => {

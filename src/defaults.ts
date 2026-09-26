@@ -68,5 +68,8 @@ export const DEFAULT_PARAMS: Params = {
     mode: 'exclude',
     dataUrl: null,
     shapes: [],
+    // Legacy configs carry none of these, so they must render paint-only
+    // exactly as before: an empty list short-circuits the radial path.
+    radialPoints: [],
   },
 };
