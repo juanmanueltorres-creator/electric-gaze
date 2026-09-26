@@ -19,6 +19,7 @@ import {
   PFX_KEYS,
   RENDER_MODES,
   type LightPoint,
+  type MaskMode,
   type Params,
 } from '../types';
 import { downloadBlob } from './export';
@@ -42,6 +43,8 @@ interface Def {
   max?: number;
   step?: number;
   opts?: readonly string[];
+  /** Display text per option value; falls back to the value itself. */
+  optLabels?: Record<string, string>;
   /**
    * Grey the control out when the current params make it a no-op, so the panel
    * never offers a knob the renderer ignores. Re-evaluated on every refresh,
@@ -142,7 +145,13 @@ const SECTIONS: Section[] = [
     title: 'Mask',
     defs: [
       { p: 'mask.enabled', l: 'Reveal mask', k: 'check' },
-      { p: 'mask.invert', l: 'Invert mask', k: 'check' },
+      {
+        p: 'mask.mode',
+        l: 'Mask mode',
+        k: 'select',
+        opts: ['include', 'exclude'] as const,
+        optLabels: { include: 'Effect inside', exclude: 'Protect area' },
+      },
       { p: 'mask.showOverlay', l: 'Show mask overlay', k: 'check' },
       {
         p: 'mask.tool',
@@ -297,12 +306,24 @@ export function normalizeParams(raw: unknown): Params {
   };
 
   if (!isPlainObject(merged.mask)) merged.mask = { ...DEFAULT_PARAMS.mask };
+  // The deep merge above always leaves a `mode` on the mask (the defaults
+  // carry one), so the "legacy document" test has to look at the RAW input:
+  // a config that never mentions `mode` must derive it from its own `invert`
+  // so it renders byte-identically (invert off = the painted zone keeps the
+  // original = 'exclude'). An explicit mode wins and re-mirrors `invert`, so
+  // a reader that only knows the old flag still reproduces this polarity.
+  const rawMask: unknown = isPlainObject(raw) ? (raw as Record<string, unknown>).mask : undefined;
+  const rawMode: unknown = isPlainObject(rawMask) ? rawMask.mode : undefined;
+  const legacyMode: MaskMode = merged.mask.invert ? 'include' : 'exclude';
+  const maskMode: MaskMode =
+    rawMode === 'include' || rawMode === 'exclude' ? rawMode : legacyMode;
   merged.mask = {
     enabled: !!merged.mask.enabled,
     tool: pick(merged.mask.tool, ['freehand', 'rect', 'circle'] as const, 'freehand'),
     brushSize: clampNum(num(merged.mask.brushSize, 30), 4, 160),
     showOverlay: !!merged.mask.showOverlay,
-    invert: !!merged.mask.invert,
+    invert: maskMode === 'include',
+    mode: maskMode,
     dataUrl: typeof merged.mask.dataUrl === 'string' ? merged.mask.dataUrl : null,
     shapes: Array.isArray(merged.mask.shapes) ? merged.mask.shapes : [],
   };
@@ -835,12 +856,16 @@ function buildControl(
     for (const opt of def.opts ?? []) {
       const o = document.createElement('option');
       o.value = opt;
-      o.textContent = opt;
+      o.textContent = def.optLabels?.[opt] ?? opt;
       select.append(o);
     }
     select.value = String(getPath(host.params, def.p) ?? '');
     select.addEventListener('change', () => {
       setPath(host.params, def.p, select.value);
+      // The mode selector is the modern spelling of the legacy polarity flag:
+      // keep `invert` mirroring it so configs saved or shared from this very
+      // session still render correctly for readers that only know `invert`.
+      if (def.p === 'mask.mode') host.params.mask.invert = select.value === 'include';
       commit();
     });
     updaters.push(() => {

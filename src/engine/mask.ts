@@ -1,9 +1,11 @@
 /**
  * Step 7: reveal mask, plus the painting surface that produces it.
  *
- * The mask is an alpha channel. Where it is opaque the *plain photo* is
- * composited back over the effect, so the mask literally reveals the
- * original. `mask.invert` flips which side is revealed.
+ * The mask is an alpha channel. `mask.mode` decides which side shows the
+ * *plain photo* composited back over the effect: `'exclude'` (Protect area)
+ * keeps the original inside the painted zone — the historical default —
+ * while `'include'` (Effect inside) puts the effect there instead. Documents
+ * that predate `mode` fall back to `invert`, exactly how they rendered before.
  *
  * Painting keeps three surfaces:
  *   base     strokes already committed
@@ -333,8 +335,13 @@ export function applyMask(
   rctx.globalCompositeOperation = 'source-over';
   rctx.drawImage(revealAlpha, 0, 0, w, h);
 
-  if (mask.invert) {
-    // Alpha inversion: fill opaque, then punch out where the mask painted.
+  // 'include' puts the effect inside the painted zone; 'exclude' protects it.
+  // A document without `mode` is legacy and keeps its exact old polarity
+  // through `invert`, which is what it has always keyed on.
+  const effectInside: boolean = mask.mode ? mask.mode === 'include' : !!mask.invert;
+  if (effectInside) {
+    // Reveal the original everywhere EXCEPT the paint: fill opaque, then
+    // punch out where the mask painted.
     rctx.fillStyle = '#ffffff';
     rctx.fillRect(0, 0, w, h);
     rctx.globalCompositeOperation = 'destination-out';

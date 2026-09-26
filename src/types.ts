@@ -56,6 +56,15 @@ export type AnimStyle = 'wave' | 'pulse' | 'shimmer' | 'ripple' | 'flicker';
 
 export type MaskTool = 'freehand' | 'rect' | 'circle';
 
+/**
+ * Which side of the painted area the effect touches.
+ * `'exclude'` — Protect area: the painted zone keeps the original photo.
+ * `'include'` — Effect inside: the painted zone receives the effect.
+ * Legacy documents carry only `invert`; readers derive the mode from it
+ * (`invert` off = `'exclude'`), so old configs render byte-identically.
+ */
+export type MaskMode = 'include' | 'exclude';
+
 export type BlendMode = GlobalCompositeOperation;
 
 export type PfxKey =
@@ -104,6 +113,7 @@ export interface MaskState {
   brushSize: number;
   showOverlay: boolean;
   invert: boolean;
+  mode: MaskMode;
   dataUrl: string | null;
   shapes: MaskShape[];
 }

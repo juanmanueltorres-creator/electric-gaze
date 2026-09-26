@@ -63,6 +63,9 @@ export const DEFAULT_PARAMS: Params = {
     brushSize: 30,
     showOverlay: false,
     invert: false,
+    // Fresh configs default to Protect area: painted zones keep the original
+    // photo, which is exactly how `invert: false` has always rendered.
+    mode: 'exclude',
     dataUrl: null,
     shapes: [],
   },
