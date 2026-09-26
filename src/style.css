@@ -1,0 +1,429 @@
+:root {
+  color-scheme: dark;
+  --bg: #05060a;
+  --panel: #0a0d14;
+  --panel-2: #0d111a;
+  --line: #1b2130;
+  --line-2: #263044;
+  --text: #aab4c5;
+  --text-strong: #e6ebf5;
+  --accent: #3ca6ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+#app {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  /* The row must be bounded by the viewport, never by its contents: an
+     auto row lets the panel (or the canvas) stretch #app past 100vh. */
+  grid-template-rows: minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- stage */
+
+#stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Absolutely positioned so the canvas is out of flow: its own height
+   attribute can then never feed back into the height it is measured
+   against, which would resize-and-clear it on every animation frame.
+   Deliberately no `inset`, `width` or `height` here: resize() writes
+   explicit inline px for both edges (and centring for the 9:16 view), and
+   a stretching rule would fight those values the way `inset: 0` did. */
+#view {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: block;
+  touch-action: none;
+}
+
+#hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  pointer-events: none;
+  color: var(--text-strong);
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(5, 6, 10, 0.72);
+}
+
+#hint[hidden] {
+  display: none;
+}
+
+#paint-toggle {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2;
+}
+
+/* View controls stack on the left (output controls live in #stage-actions on
+   the right); the offset clears the controls below it. */
+#framing-toggle {
+  position: absolute;
+  left: 16px;
+  bottom: 56px;
+  z-index: 2;
+}
+
+#compare-toggle {
+  position: absolute;
+  left: 16px;
+  bottom: 96px;
+  z-index: 2;
+}
+
+#stage-actions {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#stage-actions button:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+/* Reserves room for the widest progress labels (`Recording 100%`,
+   `Encoding 100%`) so the row does not resize while an export is running. */
+#reel-toggle,
+#gif-toggle {
+  min-width: 124px;
+  text-align: center;
+}
+
+/* --------------------------------------------------------------- panel */
+
+#panel {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+
+.group {
+  margin-bottom: 12px;
+  padding: 11px 12px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.group h2 {
+  margin: 0 0 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #7f8ca3;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 7px 0;
+  font-size: 12.5px;
+}
+
+.row > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.row input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.row select,
+.row input[type='text'] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.row input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  accent-color: var(--accent);
+}
+
+.row input[type='color'] {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.row .value {
+  flex: 0 0 auto;
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.row input[type='range'] + .value {
+  order: 0;
+}
+
+select,
+input[type='text'],
+textarea {
+  background: #05070d;
+  color: var(--text-strong);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  padding: 5px 7px;
+  font: inherit;
+  font-size: 12px;
+}
+
+select:focus,
+input:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 2px solid rgba(60, 166, 255, 0.55);
+  outline-offset: 1px;
+}
+
+.file-row input[type='file'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: #8f9bb3;
+}
+
+.btn-row {
+  flex-wrap: wrap;
+}
+
+button {
+  background: #151b28;
+  color: #dbe3f0;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  padding: 6px 11px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1c2434;
+  border-color: #33415c;
+}
+
+button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04121f;
+  font-weight: 600;
+}
+
+.textarea-row {
+  display: block;
+}
+
+.textarea-row textarea {
+  width: 100%;
+  min-height: 190px;
+  resize: vertical;
+  font: 11.5px/1.55 ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+/* One look for both status lines: the JSON box (.error, the class it has
+   always carried) and the presets box above it (.status, so the JSON test
+   selector keeps matching the message it belongs to). */
+.error,
+.status {
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: #ff7b8a;
+}
+
+.error.notice,
+.status.notice {
+  color: #7ee0a3;
+}
+
+.error[hidden],
+.status[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------ preset gallery --- */
+
+.preset-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.gallery-heading {
+  grid-column: 1 / -1;
+  margin-top: 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6d7994;
+}
+
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px;
+  background: #05070d;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.preset-card.is-current {
+  border-color: var(--accent);
+}
+
+.preset-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #05070d;
+}
+
+.preset-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.preset-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-mode {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8f9bb3;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+}
+
+.preset-current {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #04121f;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.preset-current[hidden] {
+  display: none;
+}
+
+.preset-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.preset-actions button {
+  flex: 1 1 auto;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------- stage notes -------- */
+
+/* Top-right of the stage, above the framing toggle: pointer-events none so
+   it never swallows a click on the canvas below it. One class serves every
+   fading chip — session restore, shared config, share confirmation. */
+.stage-note {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  padding: 5px 10px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  background: rgba(13, 17, 26, 0.92);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  pointer-events: none;
+  transition: opacity 0.7s ease;
+}
+
+.stage-note.faded {
+  opacity: 0;
+}
+
+@media (max-width: 900px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 52vh) minmax(0, 1fr);
+  }
+
+  #panel {
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+}

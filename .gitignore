@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local overrides and OS noise
+*.local
+.DS_Store
+Thumbs.db
+
+# Local agent / QA artifacts
+.atl/
+.qa-framing.mjs
